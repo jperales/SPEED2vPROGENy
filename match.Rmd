@@ -1,0 +1,393 @@
+---
+title: "Signature comparison between PROGENy and SPEED2"
+author: "Javier Perales-Patón - javier.perales@bioquant.uni-heidelberg.de"
+document: github_document
+---
+
+Recently, [SPEED2](https://github.com/molsysbio/speed2) was released upon the manuscript 
+publication in NAR[ref](https://doi.org/10.1093/nar/gkaa236). They have increased pathway
+coverage by mining an increased number of datasets. The full database could be accessed at
+a TSV file in the repository 
+( [`speed2_experiments.tsv`](https://github.com/molsysbio/speed2/blob/master/data-raw/speed2_experiments.tsv) ).
+After further investigation of their repository, it seems that they provide a database with the signatures 
+under a RData file at [`R/sysdata.rda`](https://github.com/molsysbio/speed2/blob/master/R/sysdata.rda).
+
+## Setup environment
+The environment will be set with a random seed number for reproducibility and an output folder
+for processed data and figures.
+
+### set env
+```{r env}
+options(stringsAsFactors = FALSE)
+# Seed number
+set.seed(1234)
+# Output directory
+OUTDIR <- "./match_output/"
+if(!dir.exists(OUTDIR)) dir.create(OUTDIR);
+
+# Figures
+FIGDIR <- paste0(OUTDIR, "/figures/")
+knitr::opts_chunk$set(fig.path=FIGDIR)
+knitr::opts_chunk$set(dev=c('png'))
+# Data
+DATADIR <- paste0(OUTDIR, "/data/")
+if(!dir.exists(DATADIR)) dir.create(DATADIR);
+```
+
+### Load libraries
+Essential libraries for R analysis.
+```{r}
+library(fgsea)
+library(progeny)
+library(ComplexHeatmap)
+```
+
+Register vars from env
+```{r}
+env_var <- ls()
+```
+
+
+## Data
+### PROGENy signatures
+We are going to use the full matrix of weights from PROGENy. For this, we use
+the native function to get the matrix of weights
+```{r}
+progeny_model <- progeny::getModel("Human", top=Inf)
+dim(progeny_model)
+```
+For the records, we show the pathway names
+```{r}
+print(colnames(progeny_model))
+```
+
+### SPEED2 signatures
+Download the database of SPEED2 signatures if needed.
+```{r}
+fl <- "https://github.com/molsysbio/speed2/raw/master/R/sysdata.rda"
+speed2_fl <- paste0(DATADIR,"/",basename(fl))
+if(!file.exists(speed2_fl)) {
+	download.file(url=fl, destfile=speed2_fl)
+}
+```
+
+Load SPEED2 data
+```{r}
+load(speed2_fl)
+```
+
+Which objects contains that rda file?
+```{r}
+setdiff(ls(), env_var)
+```
+
+Taking into account that PROGENy data is just a matrix of gene symbols X pathways.
+We are interested just in three files to make easy the matching with PROGENy:
+
+* `speed2_signatures` contains the signatures as a long data.frame.
+* `speed2_pathways` contains pathway IDs to pathway names.
+* `df_entrezID` points out hgnc gene symbols to entrezID.
+
+For the records, we show the pathway names from SPEED2:
+```{r}
+print(speed2_pathways$p_id)
+```
+
+We will create a PROGENy-like matrix for further comparisons. For this we have to reformat
+the data.
+```{r}
+# speed2_signatures2 <- merge(x=speed2_signatures, y=speed2_pathways,
+# 			    by.x="pathway_number", by.y="pathway_number",
+# 			    all.x=TRUE)
+# speed2_signatures3 <- merge(x=speed2_signatures2, y=df_entrezID,
+# 			    by.x="g_id", by.y="g_id", all.x=TRUE)
+```
+
+Just to explore the database: it seems that not all gene universe is equally represented 
+along the 16 pathways. Probably they have pre-selected genes based on subsets of the 
+experiment database to build the model.
+```{r}
+(speed2_path_cnt <- length(unique(speed2_signatures$pathway_number)))
+(speed2_gene_universe <- length(unique(speed2_signatures$g_id)))
+
+# All gene universe is represented along the 16 pathways?
+hist(table(speed2_signatures$g_id))
+```
+
+We build a PROGENy-like matrix for further comparisons.
+```{r}
+# First we define a dictionary of pathways
+pathway_n2id <- setNames(speed2_pathways$p_id, 
+			 as.character(speed2_pathways$pathway_number))
+# Second we define the universe of genes
+## If there is any duplicated, we are going to select the first entry in numerical entry
+## because that means it was the first recorded with that name.
+if(any(duplicated(df_entrezID$gene))) {
+ cat("WARN: Selecting genes based on order for duplicated genes\n",
+     file=stdout())
+ df_entrezID <- df_entrezID[order(df_entrezID$g_id, decreasing=FALSE),]
+ df_entrezID <- df_entrezID[!duplicated(df_entrezID$gene),]
+ 
+ speed2_signatures <- speed2_signatures[speed2_signatures$g_id %in% df_entrezID$g_id, ]
+}
+
+# Finally, we define the gene universe
+genes_entrez2hgnc <- setNames(df_entrezID$gene, 
+			      as.character(df_entrezID$g_id))
+# Speed2 weights: we define weights as -log10(pval) * sign(zscore)
+speed2_signatures$weight <- -log10(speed2_signatures$qval) *
+	sign(speed2_signatures$zrank_signed_mean)
+
+# Empty matrix to store the model
+SPEED2_model <- matrix(NA, nrow=length(genes_entrez2hgnc), ncol=length(pathway_n2id),
+		       dimnames=list(genes_entrez2hgnc, pathway_n2id))
+# We split by chunks of pathways the signatures
+speed2_signatures2 <- split(speed2_signatures, speed2_signatures$pathway_number)
+
+for(pid in names(speed2_signatures2)) {
+	signat <- speed2_signatures2[[pid]]$weight
+	names(signat) <- genes_entrez2hgnc[as.character(speed2_signatures2[[pid]]$g_id)]
+	if(any(is.na(names(signat)))) {
+		cat(paste0("WARN: it seems there are NA's in gene symbols from signatures...",
+			   "n=",sum(is.na(names(signat))),".\n",
+			   "Those will be removed.\n"),
+		    file=stdout())
+		signat <- signat[!is.na(names(signat))] # I found one case of 1 entrezID not described 
+	}
+
+	#Dimension
+	genes <- names(signat) 
+	path <- pathway_n2id[as.character(pid)]
+	# Replace
+	SPEED2_model[genes, path] <- signat 
+}
+```
+
+## Looking for a common space
+First we take a look which pathways are common between the two methods.
+We will rename them to match each other. In summary:
+
+* Estrogen, Hypoxia, JAK-STAT, p53, TGFb, TNFa, VEGF.
+* Both present Wnt, but one is uppercase - we will change it accordingly.
+* `PROGENy` presents two separates, MAPK and PI3K, while those are jointly built in `SPEED2`.
+```{r}
+colnames(SPEED2_model)
+colnames(progeny_model)
+```
+
+We reformat `pathways` accordingly: WNT is uppercased, SPEED2's MAPK+PI3K is duplicated and 
+renamed for further comparison.
+```{r}
+# Uppercase Wnt
+colnames(SPEED2_model)[which(colnames(SPEED2_model)=="Wnt")] <- "WNT"
+
+# Split and rename double MAPK+PI3K
+SPEED2_model <- cbind(SPEED2_model, "PI3K"=SPEED2_model[,"MAPK+PI3K"])
+colnames(SPEED2_model)[which(colnames(SPEED2_model)=="MAPK+PI3K")] <- "MAPK"
+# Get common pathways
+(common_paths <- intersect(colnames(SPEED2_model), colnames(progeny_model)))
+```
+
+
+What about the genes? Well, actually there is a large overlap! 21k genes. However,
+many of these present NA's.
+```{r}
+nrow(SPEED2_model)
+nrow(progeny_model)
+length(intersect(rownames(SPEED2_model),rownames(progeny_model)))
+
+# How many NA's per pathway
+barplot(colSums(is.na(SPEED2_model)), horiz = TRUE, las=1)
+
+# get common genes
+common_genes <- intersect(rownames(SPEED2_model), rownames(progeny_model))
+```
+
+## Signature comparison
+First we subset the data to have common dimension
+```{r}
+S2 <- SPEED2_model[common_genes, common_paths]
+P <- progeny_model[common_genes, common_paths]
+```
+
+Pearson correlation shows a strong positive correlation between matched pairs between both models.
+With the exception of WNT and VGF pathways.
+
+```{r pearson_cor, fig.width=9, fig.height=7, dpi=300}
+cormat <- cor(S2, P, method="pearson", use="pairwise.complete.obs")
+
+corhp <- Heatmap(cormat, name="Pearson cor", 
+	cluster_rows = FALSE, cluster_columns = FALSE,
+	row_title = "SPEED2", column_title="PROGENy",
+	row_names_side = "left", column_names_side="top",
+	row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
+	row_title_gp = gpar(fontsize=32), column_title_gp = gpar(fontsize=32),
+	heatmap_legend_param = list("legend_direction"="horizontal",
+				    "labels_gp"=gpar(fontsize=20),
+				    "title_gp"=gpar(fontsize=26)
+				    ),
+	cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(sprintf("%.2f",cormat[i, j]), x, y, gp = gpar(fontsize=16))
+    })
+draw(corhp, heatmap_legend_side="bottom")
+```
+
+```{r spearman_cor, fig.width=9, fig.height=7, dpi=300}
+cormat <- cor(S2, P, method="spearman", use="pairwise.complete.obs")
+
+corhp <- Heatmap(cormat, name="Spearman cor", 
+	cluster_rows = FALSE, cluster_columns = FALSE,
+	row_title = "SPEED2", column_title="PROGENy",
+	row_names_side = "left", column_names_side="top",
+	row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
+	row_title_gp = gpar(fontsize=32), column_title_gp = gpar(fontsize=32),
+	heatmap_legend_param = list("legend_direction"="horizontal",
+				    "labels_gp"=gpar(fontsize=20),
+				    "title_gp"=gpar(fontsize=26)
+				    ),
+	cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(sprintf("%.2f",cormat[i, j]), x, y, gp = gpar(fontsize=16))
+    })
+draw(corhp, heatmap_legend_side="bottom")
+```
+
+```{r jaccard_idx, fig.width=9, fig.height=7, dpi=300}
+jaccard_idx <- function(A, B) {
+	idx <- length(intersect(A,B)) / length(unique(c(A,B)))
+	return(idx)
+}
+
+S2_foot <- sapply(colnames(S2), function(pid) {
+			  rnk <- S2[,pid]
+			  names(rnk) <- paste0(rownames(S2),
+					       ifelse(sign(rnk)>0,"_POS","_NEG")
+					       )
+			  rnk <- sort(abs(na.omit(rnk)),decreasing=TRUE)
+			  return(head(names(rnk),100))
+    }, simplify=FALSE)
+
+P_foot <- sapply(colnames(P), function(pid) {
+			  rnk <- P[,pid]
+			  names(rnk) <- paste0(rownames(S2),
+					       ifelse(sign(rnk)>0,"_POS","_NEG")
+					       )
+			  rnk <- sort(abs(na.omit(rnk)),decreasing=TRUE)
+			  return(head(names(rnk),100))
+    }, simplify=FALSE)
+
+
+jacmat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
+		  dimnames=list(colnames(S2), colnames(P)))
+for(ridx in rownames(jacmat)) {
+	A <- S2_foot[[ridx]]
+	for(cidx in colnames(jacmat)) {
+		B <- P_foot[[cidx]]
+		jacmat[ridx, cidx] <- jaccard_idx(A,B)
+	}
+}
+
+jachp <- Heatmap(jacmat, name="Jaccard Index",col=c("blue","yellow"), 
+	cluster_rows = FALSE, cluster_columns = FALSE,
+	row_title = "SPEED2 (100-gene footprints)", 
+	column_title="PROGENy (100-gene footprints)",
+	row_names_side = "left", column_names_side="top",
+	row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
+	row_title_gp = gpar(fontsize=30), column_title_gp = gpar(fontsize=30),
+	heatmap_legend_param = list("legend_direction"="horizontal",
+				    "labels_gp"=gpar(fontsize=20),
+				    "title_gp"=gpar(fontsize=26)
+				    ),
+	cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(sprintf("%.2f",jacmat[i, j]), x, y, gp = gpar(fontsize=16))
+    })
+draw(jachp, heatmap_legend_side="bottom")
+```
+
+### Total Enrichment Score
+```{r}
+S2_UP <- sapply(colnames(S2), function(pid) {
+		       names(sort(na.omit(setNames(S2[,pid],
+						   rownames(S2))),
+				  decreasing=TRUE))[1:100]
+    }, simplify=FALSE)
+
+P_UP <- sapply(colnames(P), function(pid) {
+		       names(sort(na.omit(setNames(P[,pid],
+						   rownames(P))),
+				  decreasing=TRUE))[1:100]
+    }, simplify=FALSE)
+
+S2_DN <- sapply(colnames(S2), function(pid) {
+		       names(sort(na.omit(setNames(S2[,pid],
+						   rownames(S2))),
+				  decreasing=FALSE))[1:100]
+    }, simplify=FALSE)
+
+P_DN <- sapply(colnames(P), function(pid) {
+		       names(sort(na.omit(setNames(P[,pid],
+						   rownames(P))),
+				  decreasing=FALSE))[1:100]
+    }, simplify=FALSE)
+
+
+dummyNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
+		  dimnames=list(colnames(S2), colnames(P)))
+
+stopifnot(all(colnames(P) == colnames(S2)))
+stopifnot(all(names(P_UP) == names(S2_UP)))
+stopifnot(all(names(P_DN) == names(S2_DN)))
+
+# First SPEED2 enrichments
+S_diffNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
+		  dimnames=list(colnames(S2), colnames(P)))
+for(ridx in rownames(TES_mat)) {
+	S_rnk <- sort(na.omit(setNames(S2[,ridx],rownames(S2))))
+	S_nes_UP <- fgsea(P_UP, S_rnk)$NES
+	S_nes_DN <- fgsea(P_DN, S_rnk)$NES
+	S_diffNES <- S_nes_UP - S_nes_DN
+	S_diffNES_mat[ridx,] <- S_diffNES
+}
+
+# # Second PROGENy enrichments over SPEED2
+# P_diffNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
+# 		  dimnames=list(colnames(S2), colnames(P)))
+# for(cidx in colnames(TES_mat)) {
+# 	P_rnk <- sort(na.omit(setNames(P[,cidx],rownames(P))))
+# 	P_nes_UP <- fgsea(S2_UP, P_rnk)$NES
+# 	P_nes_DN <- fgsea(S2_DN, P_rnk)$NES
+# 	P_diffNES <- P_nes_UP - P_nes_DN
+# 	P_diffNES_mat[, cidx] <- P_diffNES
+# }
+ 
+# Second PROGENy enrichments over SPEED2
+P_diffNES_mat <- matrix(NA, nrow=ncol(P), ncol=ncol(S2), 
+		  dimnames=list(colnames(P), colnames(S2)))
+for(ridx in rownames(TES_mat)) {
+	P_rnk <- sort(na.omit(setNames(P[,ridx],rownames(P))))
+	P_nes_UP <- fgsea(S2_UP, P_rnk)$NES
+	P_nes_DN <- fgsea(S2_DN, P_rnk)$NES
+	P_diffNES <- P_nes_UP - P_nes_DN
+	P_diffNES_mat[ridx, ] <- P_diffNES
+}
+# Average both
+TESmat <- (S_diffNES_mat + P_diffNES_mat) / 2
+
+# Visualization
+teshp <- Heatmap(TESmat, name="Total Enrich. Score", 
+	cluster_rows = FALSE, cluster_columns = FALSE,
+	row_title = "SPEED2", 
+	column_title="PROGENy",
+	row_names_side = "left", column_names_side="top",
+	row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
+	row_title_gp = gpar(fontsize=30), column_title_gp = gpar(fontsize=30),
+	heatmap_legend_param = list("legend_direction"="horizontal",
+				    "labels_gp"=gpar(fontsize=20),
+				    "title_gp"=gpar(fontsize=26)
+				    ),
+	cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(sprintf("%.2f",TESmat[i, j]), x, y, gp = gpar(fontsize=16))
+    })
+draw(teshp, heatmap_legend_side="bottom")
+
+```
+
