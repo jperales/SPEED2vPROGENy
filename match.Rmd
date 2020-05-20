@@ -1,7 +1,7 @@
 ---
 title: "Signature comparison between PROGENy and SPEED2"
 author: "Javier Perales-Patón - javier.perales@bioquant.uni-heidelberg.de"
-document: github_document
+output: github_document
 ---
 
 Recently, [SPEED2](https://github.com/molsysbio/speed2) was released upon the manuscript 
@@ -303,91 +303,15 @@ jachp <- Heatmap(jacmat, name="Jaccard Index",col=c("blue","yellow"),
 draw(jachp, heatmap_legend_side="bottom")
 ```
 
-### Total Enrichment Score
+## Session info
+
 ```{r}
-S2_UP <- sapply(colnames(S2), function(pid) {
-		       names(sort(na.omit(setNames(S2[,pid],
-						   rownames(S2))),
-				  decreasing=TRUE))[1:100]
-    }, simplify=FALSE)
+sessionInfo()
 
-P_UP <- sapply(colnames(P), function(pid) {
-		       names(sort(na.omit(setNames(P[,pid],
-						   rownames(P))),
-				  decreasing=TRUE))[1:100]
-    }, simplify=FALSE)
-
-S2_DN <- sapply(colnames(S2), function(pid) {
-		       names(sort(na.omit(setNames(S2[,pid],
-						   rownames(S2))),
-				  decreasing=FALSE))[1:100]
-    }, simplify=FALSE)
-
-P_DN <- sapply(colnames(P), function(pid) {
-		       names(sort(na.omit(setNames(P[,pid],
-						   rownames(P))),
-				  decreasing=FALSE))[1:100]
-    }, simplify=FALSE)
-
-
-dummyNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
-		  dimnames=list(colnames(S2), colnames(P)))
-
-stopifnot(all(colnames(P) == colnames(S2)))
-stopifnot(all(names(P_UP) == names(S2_UP)))
-stopifnot(all(names(P_DN) == names(S2_DN)))
-
-# First SPEED2 enrichments
-S_diffNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
-		  dimnames=list(colnames(S2), colnames(P)))
-for(ridx in rownames(TES_mat)) {
-	S_rnk <- sort(na.omit(setNames(S2[,ridx],rownames(S2))))
-	S_nes_UP <- fgsea(P_UP, S_rnk)$NES
-	S_nes_DN <- fgsea(P_DN, S_rnk)$NES
-	S_diffNES <- S_nes_UP - S_nes_DN
-	S_diffNES_mat[ridx,] <- S_diffNES
+{                                                                                                                                                                                                           
+sink(file=paste0(OUTDIR,"/sessionInfo.txt"))
+print(sessionInfo())
+sink()
 }
-
-# # Second PROGENy enrichments over SPEED2
-# P_diffNES_mat <- matrix(NA, nrow=ncol(S2), ncol=ncol(P), 
-# 		  dimnames=list(colnames(S2), colnames(P)))
-# for(cidx in colnames(TES_mat)) {
-# 	P_rnk <- sort(na.omit(setNames(P[,cidx],rownames(P))))
-# 	P_nes_UP <- fgsea(S2_UP, P_rnk)$NES
-# 	P_nes_DN <- fgsea(S2_DN, P_rnk)$NES
-# 	P_diffNES <- P_nes_UP - P_nes_DN
-# 	P_diffNES_mat[, cidx] <- P_diffNES
-# }
- 
-# Second PROGENy enrichments over SPEED2
-P_diffNES_mat <- matrix(NA, nrow=ncol(P), ncol=ncol(S2), 
-		  dimnames=list(colnames(P), colnames(S2)))
-for(ridx in rownames(TES_mat)) {
-	P_rnk <- sort(na.omit(setNames(P[,ridx],rownames(P))))
-	P_nes_UP <- fgsea(S2_UP, P_rnk)$NES
-	P_nes_DN <- fgsea(S2_DN, P_rnk)$NES
-	P_diffNES <- P_nes_UP - P_nes_DN
-	P_diffNES_mat[ridx, ] <- P_diffNES
-}
-# Average both
-TESmat <- (S_diffNES_mat + P_diffNES_mat) / 2
-
-# Visualization
-teshp <- Heatmap(TESmat, name="Total Enrich. Score", 
-	cluster_rows = FALSE, cluster_columns = FALSE,
-	row_title = "SPEED2", 
-	column_title="PROGENy",
-	row_names_side = "left", column_names_side="top",
-	row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
-	row_title_gp = gpar(fontsize=30), column_title_gp = gpar(fontsize=30),
-	heatmap_legend_param = list("legend_direction"="horizontal",
-				    "labels_gp"=gpar(fontsize=20),
-				    "title_gp"=gpar(fontsize=26)
-				    ),
-	cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
-        grid.text(sprintf("%.2f",TESmat[i, j]), x, y, gp = gpar(fontsize=16))
-    })
-draw(teshp, heatmap_legend_side="bottom")
-
 ```
 
