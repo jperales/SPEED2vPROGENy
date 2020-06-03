@@ -145,6 +145,7 @@ dependencies:
   - r-pkgconfig=2.0.3=r40h6115d3f_1
   - r-pkgload=1.0.2=r40h0357c0b_1002
   - r-plogr=0.2.0=r40h6115d3f_1003
+  - r-plyr=1.8.6=r40h0357c0b_1
   - r-png=0.1_7=r40hcdcec82_1004
   - r-praise=1.0.0=r40h6115d3f_1004
   - r-prettyunits=1.1.1=r40h6115d3f_1
@@ -158,6 +159,7 @@ dependencies:
   - r-rcpp=1.0.4.6=r40h0357c0b_1
   - r-rematch2=2.1.2=r40h6115d3f_1
   - r-remotes=2.1.1=r40h6115d3f_1
+  - r-reshape2=1.4.4=r40h0357c0b_1
   - r-rex=1.2.0=r40h6115d3f_1
   - r-rjson=0.2.20=r40h0357c0b_1002
   - r-rlang=0.4.6=r40hcdcec82_0

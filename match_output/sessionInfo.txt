@@ -18,23 +18,24 @@ attached base packages:
 [8] base     
 
 other attached packages:
-[1] ComplexHeatmap_2.4.2 progeny_1.10.0       fgsea_1.14.0        
-[4] rmarkdown_2.1        nvimcom_0.9-82      
+[1] reshape2_1.4.4       ggplot2_3.3.0        ComplexHeatmap_2.4.2
+[4] progeny_1.10.0       fgsea_1.14.0         rmarkdown_2.1       
+[7] nvimcom_0.9-82      
 
 loaded via a namespace (and not attached):
  [1] circlize_0.4.9      shape_1.4.4         GetoptLong_0.1.8   
  [4] tidyselect_1.1.0    xfun_0.13           purrr_0.3.4        
  [7] lattice_0.20-41     colorspace_1.4-1    vctrs_0.3.0        
-[10] htmltools_0.4.0     yaml_2.2.1          utf8_1.1.4         
-[13] rlang_0.4.6         pillar_1.4.4        glue_1.4.1         
-[16] BiocParallel_1.22.0 RColorBrewer_1.1-2  lifecycle_0.2.0    
-[19] stringr_1.4.0       munsell_0.5.0       gtable_0.3.0       
-[22] GlobalOptions_0.1.1 evaluate_0.14       knitr_1.28         
-[25] parallel_4.0.0      fansi_0.4.1         Rcpp_1.0.4.6       
-[28] scales_1.1.1        gridExtra_2.3       fastmatch_1.1-0    
-[31] rjson_0.2.20        ggplot2_3.3.0       png_0.1-7          
-[34] digest_0.6.25       stringi_1.4.6       dplyr_0.8.5        
-[37] ggrepel_0.8.2       clue_0.3-57         cli_2.0.2          
+[10] htmltools_0.4.0     yaml_2.2.1          rlang_0.4.6        
+[13] pillar_1.4.4        glue_1.4.1          withr_2.2.0        
+[16] BiocParallel_1.22.0 RColorBrewer_1.1-2  plyr_1.8.6         
+[19] lifecycle_0.2.0     stringr_1.4.0       munsell_0.5.0      
+[22] gtable_0.3.0        GlobalOptions_0.1.1 evaluate_0.14      
+[25] labeling_0.3        knitr_1.28          parallel_4.0.0     
+[28] Rcpp_1.0.4.6        scales_1.1.1        farver_2.0.3       
+[31] gridExtra_2.3       fastmatch_1.1-0     rjson_0.2.20       
+[34] png_0.1-7           digest_0.6.25       stringi_1.4.6      
+[37] dplyr_0.8.5         ggrepel_0.8.2       clue_0.3-57        
 [40] tools_4.0.0         magrittr_1.5        tibble_3.0.1       
 [43] cluster_2.1.0       crayon_1.3.4        tidyr_1.0.3        
 [46] pkgconfig_2.0.3     ellipsis_0.3.1      Matrix_1.2-18      
