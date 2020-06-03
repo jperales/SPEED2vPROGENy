@@ -44,12 +44,135 @@ Essential libraries for R analysis.
 library(fgsea)
 library(progeny)
 library(ComplexHeatmap)
+library(ggplot2)
+library(reshape2)
 ```
 
 Register vars from env
 
 ``` r
 env_var <- ls()
+```
+
+## Methods of signature similarity
+
+The pearson correlation probably is not the best method for signature
+matching because signatures are large and the signal is contained in a
+few features of the vector. But we could just correlate the top of these
+signal each other to figure.
+
+``` r
+# corTOP <- function(A,B,Ngenes) {
+# 
+#  A_genes <- unique(as.vector(apply(A,2, function(z) names(sort(abs(na.omit(z))))[1:Ngenes])))
+#  B_genes <- unique(as.vector(apply(B,2, function(z) names(sort(abs(na.omit(z))))[1:Ngenes])))
+#  genes <- unique(c(intersect(A_genes,rownames(B)),
+#          intersect(B_genes,rownames(A))))
+#  cat(paste0("INFO: Ngenes=",length(genes)," in the correlation matrix"), file=stdout())
+#   
+#  cormat <- cor(A[genes,], P[genes,], method="pearson", use="pairwise.complete.obs")
+#  return(cormat)
+# }
+```
+
+``` r
+corTOP <- function(A,B,Ngenes, method="pearson") {
+
+ A_genes <- apply(A,2, function(z) names(sort(abs(na.omit(z))))[1:Ngenes])
+ B_genes <- apply(B,2, function(z) names(sort(abs(na.omit(z))))[1:Ngenes])
+    
+ mat <- matrix(NA, nrow=ncol(A), ncol=ncol(B), dimnames=list(colnames(A),colnames(B)))
+ for(i in rownames(mat)) {
+     i_genes <- intersect(A_genes[,i], rownames(B))
+    for(j in colnames(mat)) {
+        j_genes <- intersect(B_genes[,j], rownames(A))
+        genes <- unique(c(i_genes,j_genes))
+        mat[i,j] <- cor(A[genes, i], B[genes, j], method=method, use="pairwise.complete.obs")
+    }
+ }
+ return(mat)
+}
+```
+
+The jaccard index gives an estimation of the intersection between two
+sets given the universe of the total elements from the sets.
+
+``` r
+jaccard_idx <- function(A, B) {
+    idx <- length(intersect(A,B)) / length(unique(c(A,B)))
+    return(idx)
+}
+```
+
+The Total Enrichment Score is a robust estimation of signature
+similarity. It consists on the average from a reciprocal enrichment of
+the top and bottom of the rankings.
+
+``` r
+TES_calc <- function(A,B, Ngenes=100, seed=1234) {
+    set.seed(seed)
+
+    A_UP <- sapply(colnames(A), function(pid) {
+                   names(sort(na.omit(setNames(A[,pid],
+                               rownames(A))),
+                      decreasing=TRUE))[1:Ngenes]
+    }, simplify=FALSE)
+
+    B_UP <- sapply(colnames(B), function(pid) {
+                   names(sort(na.omit(setNames(B[,pid],
+                               rownames(B))),
+                      decreasing=TRUE))[1:Ngenes]
+    }, simplify=FALSE)
+
+    A_DN <- sapply(colnames(A), function(pid) {
+                   names(sort(na.omit(setNames(A[,pid],
+                               rownames(A))),
+                      decreasing=FALSE))[1:Ngenes]
+    }, simplify=FALSE)
+
+    B_DN <- sapply(colnames(B), function(pid) {
+                   names(sort(na.omit(setNames(B[,pid],
+                               rownames(B))),
+                      decreasing=FALSE))[1:Ngenes]
+    }, simplify=FALSE)
+
+
+    dummyNES_mat <- matrix(NA, nrow=ncol(A), ncol=ncol(B), 
+                   dimnames=list(colnames(A), colnames(B)))
+
+    stopifnot(all(colnames(B) == colnames(A)))
+    stopifnot(all(names(B_UP) == names(A_UP)))
+    stopifnot(all(names(B_DN) == names(A_DN)))
+
+    # First SPEED2 enrichments
+    A_diffNES_mat <- matrix(NA, nrow=ncol(A), ncol=ncol(P), 
+                dimnames=list(colnames(A), colnames(P)))
+    for(ridx in rownames(A_diffNES_mat)) {
+        A_rnk <- sort(na.omit(setNames(A[,ridx],rownames(A))))
+        A_nes_UP <- fgsea(B_UP, A_rnk)$NES
+        A_nes_DN <- fgsea(B_DN, A_rnk)$NES
+        A_diffNES <- A_nes_UP - A_nes_DN
+        A_diffNES_mat[ridx,] <- A_diffNES
+    }
+
+    # Second PROGENy enrichments over SPEED2
+    B_diffNES_mat <- matrix(NA, nrow=ncol(B), ncol=ncol(S2), 
+                dimnames=list(colnames(B), colnames(S2)))
+    for(ridx in rownames(B_diffNES_mat)) {
+        B_rnk <- sort(na.omit(setNames(B[,ridx],rownames(B))))
+        B_nes_UP <- fgsea(A_UP, B_rnk)$NES
+        B_nes_DN <- fgsea(A_DN, B_rnk)$NES
+        B_diffNES <- B_nes_UP - B_nes_DN
+        B_diffNES_mat[ridx, ] <- B_diffNES
+    }
+    # Average both
+    # We transpose the second one since both are by rows, but
+    # virtually the comparison matrix is row=SPEED2, col=PROGENy
+    TESmat <- (A_diffNES_mat + t(B_diffNES_mat)) / 2
+
+    return(TESmat)
+
+}
 ```
 
 ## Data
@@ -153,7 +276,7 @@ the model.
 hist(table(speed2_signatures$g_id))
 ```
 
-![](./match_output//figures/unnamed-chunk-10-1.png)<!-- -->
+![](./match_output//figures/unnamed-chunk-12-1.png)<!-- -->
 
 We build a PROGENy-like matrix for further comparisons.
 
@@ -284,7 +407,7 @@ length(intersect(rownames(SPEED2_model),rownames(progeny_model)))
 barplot(colSums(is.na(SPEED2_model)), horiz = TRUE, las=1)
 ```
 
-![](./match_output//figures/unnamed-chunk-14-1.png)<!-- -->
+![](./match_output//figures/unnamed-chunk-16-1.png)<!-- -->
 
 ``` r
 # get common genes
@@ -299,6 +422,30 @@ First we subset the data to have common dimension
 S2 <- SPEED2_model[common_genes, common_paths]
 P <- progeny_model[common_genes, common_paths]
 ```
+
+### Distribution of signatures
+
+``` r
+S2_ty <- reshape2::melt(S2)
+colnames(S2_ty) <- c("Gene","Path","weight")
+
+ggplot(S2_ty, aes(x=weight)) + geom_density() + facet_wrap(~Path) + 
+    theme_minimal() + ggtitle("SPEED2")
+```
+
+    ## Warning: Removed 51115 rows containing non-finite values (stat_density).
+
+![](./match_output//figures/SPEED2_signature_distribution-1.png)<!-- -->
+
+``` r
+P_ty <- reshape2::melt(as.matrix(P))
+colnames(P_ty) <- c("Gene","Path","weight")
+
+ggplot(P_ty, aes(x=weight)) + geom_density() + facet_wrap(~Path) + 
+    theme_minimal() + ggtitle("PROGENy")
+```
+
+![](./match_output//figures/PROGENy_signature_distribution-1.png)<!-- -->
 
 Pearson correlation shows a strong positive correlation between matched
 pairs between both models. With the exception of WNT and VGF pathways.
@@ -346,11 +493,6 @@ draw(corhp, heatmap_legend_side="bottom")
 ![](./match_output//figures/spearman_cor-1.png)<!-- -->
 
 ``` r
-jaccard_idx <- function(A, B) {
-    idx <- length(intersect(A,B)) / length(unique(c(A,B)))
-    return(idx)
-}
-
 S2_foot <- sapply(colnames(S2), function(pid) {
               rnk <- S2[,pid]
               names(rnk) <- paste0(rownames(S2),
@@ -399,6 +541,91 @@ draw(jachp, heatmap_legend_side="bottom")
 
 ![](./match_output//figures/jaccard_idx-1.png)<!-- -->
 
+### Total Enrichment Score
+
+``` r
+TESmat <- TES_calc(A=S2, B=P)
+
+# Visualization
+teshp <- Heatmap(TESmat, name="Total Enrich. Score", 
+    cluster_rows = FALSE, cluster_columns = FALSE,
+    row_title = "SPEED2", 
+    column_title="PROGENy",
+    row_names_side = "left", column_names_side="top",
+    row_names_gp = gpar(fontsize=22), column_names_gp = gpar(fontsize=22),
+    row_title_gp = gpar(fontsize=30), column_title_gp = gpar(fontsize=30),
+    heatmap_legend_param = list("legend_direction"="horizontal",
+                    "labels_gp"=gpar(fontsize=20),
+                    "title_gp"=gpar(fontsize=26)
+                    ),
+    cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+        grid.text(sprintf("%.2f",TESmat[i, j]), x, y, gp = gpar(fontsize=16))
+    })
+draw(teshp, heatmap_legend_side="bottom")
+```
+
+![](./match_output//figures/TES-1.png)<!-- -->
+
+## Curves of signature similarity by footprint length
+
+### Pearson
+
+``` r
+# steps <- c(15, 30, 50, 100, 250, 500, 1000)
+steps <- seq(10, length(common_genes), by=100)
+CORdiag <- matrix(NA, nrow=length(steps), ncol=length(common_paths),
+          dimnames=list(as.character(steps),common_paths))
+
+for(st in steps) {
+    CORdiag[as.character(st), ] <- diag(corTOP(A=S2, B=P, Ngenes=st, method="pearson"))
+
+}
+
+CORdiag_dat <- reshape2::melt(CORdiag)
+colnames(CORdiag_dat) <- c("Ngenes", "path", "COR")
+ggplot(CORdiag_dat, aes(x=Ngenes, y=COR, colour=path)) + geom_line()
+```
+
+![](./match_output//figures/pearson_curve-1.png)<!-- -->
+
+### Spearman
+
+``` r
+steps <- seq(10, length(common_genes), by=100)
+CORdiag <- matrix(NA, nrow=length(steps), ncol=length(common_paths),
+          dimnames=list(as.character(steps),common_paths))
+
+for(st in steps) {
+    CORdiag[as.character(st), ] <- diag(corTOP(A=S2, B=P, Ngenes=st, method="spearman"))
+
+}
+
+CORdiag_dat <- reshape2::melt(CORdiag)
+colnames(CORdiag_dat) <- c("Ngenes", "path", "COR")
+ggplot(CORdiag_dat, aes(x=Ngenes, y=COR, colour=path)) + geom_line()
+```
+
+![](./match_output//figures/spearman_curve-1.png)<!-- -->
+
+### Enrichment
+
+``` r
+steps <- c(15, 30, 50, 100, 250, 500, 1000)
+TESdiag <- matrix(NA, nrow=length(steps), ncol=length(common_paths),
+          dimnames=list(as.character(steps),common_paths))
+
+for(st in steps) {
+    TESdiag[as.character(st), ] <- diag(TES_calc(A=S2, B=P, Ngenes=st))
+
+}
+
+TESdiag_dat <- reshape2::melt(TESdiag)
+colnames(TESdiag_dat) <- c("Ngenes", "path", "TES")
+ggplot(TESdiag_dat, aes(x=Ngenes, y=TES, colour=path)) + geom_line()
+```
+
+![](./match_output//figures/TES_curve-1.png)<!-- -->
+
 ## Session info
 
 ``` r
@@ -425,23 +652,24 @@ sessionInfo()
     ## [8] base     
     ## 
     ## other attached packages:
-    ## [1] ComplexHeatmap_2.4.2 progeny_1.10.0       fgsea_1.14.0        
-    ## [4] rmarkdown_2.1        nvimcom_0.9-82      
+    ## [1] reshape2_1.4.4       ggplot2_3.3.0        ComplexHeatmap_2.4.2
+    ## [4] progeny_1.10.0       fgsea_1.14.0         rmarkdown_2.1       
+    ## [7] nvimcom_0.9-82      
     ## 
     ## loaded via a namespace (and not attached):
     ##  [1] circlize_0.4.9      shape_1.4.4         GetoptLong_0.1.8   
     ##  [4] tidyselect_1.1.0    xfun_0.13           purrr_0.3.4        
     ##  [7] lattice_0.20-41     colorspace_1.4-1    vctrs_0.3.0        
-    ## [10] htmltools_0.4.0     yaml_2.2.1          utf8_1.1.4         
-    ## [13] rlang_0.4.6         pillar_1.4.4        glue_1.4.1         
-    ## [16] BiocParallel_1.22.0 RColorBrewer_1.1-2  lifecycle_0.2.0    
-    ## [19] stringr_1.4.0       munsell_0.5.0       gtable_0.3.0       
-    ## [22] GlobalOptions_0.1.1 evaluate_0.14       knitr_1.28         
-    ## [25] parallel_4.0.0      fansi_0.4.1         Rcpp_1.0.4.6       
-    ## [28] scales_1.1.1        gridExtra_2.3       fastmatch_1.1-0    
-    ## [31] rjson_0.2.20        ggplot2_3.3.0       png_0.1-7          
-    ## [34] digest_0.6.25       stringi_1.4.6       dplyr_0.8.5        
-    ## [37] ggrepel_0.8.2       clue_0.3-57         cli_2.0.2          
+    ## [10] htmltools_0.4.0     yaml_2.2.1          rlang_0.4.6        
+    ## [13] pillar_1.4.4        glue_1.4.1          withr_2.2.0        
+    ## [16] BiocParallel_1.22.0 RColorBrewer_1.1-2  plyr_1.8.6         
+    ## [19] lifecycle_0.2.0     stringr_1.4.0       munsell_0.5.0      
+    ## [22] gtable_0.3.0        GlobalOptions_0.1.1 evaluate_0.14      
+    ## [25] labeling_0.3        knitr_1.28          parallel_4.0.0     
+    ## [28] Rcpp_1.0.4.6        scales_1.1.1        farver_2.0.3       
+    ## [31] gridExtra_2.3       fastmatch_1.1-0     rjson_0.2.20       
+    ## [34] png_0.1-7           digest_0.6.25       stringi_1.4.6      
+    ## [37] dplyr_0.8.5         ggrepel_0.8.2       clue_0.3-57        
     ## [40] tools_4.0.0         magrittr_1.5        tibble_3.0.1       
     ## [43] cluster_2.1.0       crayon_1.3.4        tidyr_1.0.3        
     ## [46] pkgconfig_2.0.3     ellipsis_0.3.1      Matrix_1.2-18      
